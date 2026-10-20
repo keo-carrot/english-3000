@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Flashcard 3000 từ tiếng Anh</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    background: #fff;
+    color: #000;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+  }
+  body {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 24px 16px;
+  }
+  .wrap { width: 100%; max-width: 560px; }
+
+  .counter { text-align: center; font-size: 15px; margin-bottom: 12px; }
+
+  .card {
+    border: 1px solid #000;
+    border-radius: 12px;
+    min-height: 260px;
+    padding: 32px 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    gap: 14px;
+    user-select: none;
+  }
+  .en { font-size: 44px; font-weight: 700; line-height: 1.2; word-break: break-word; }
+  .pos { font-size: 18px; font-style: italic; }
+  .vi { font-size: 26px; line-height: 1.35; }
+  .hidden-text { color: #000; font-size: 30px; letter-spacing: 4px; }
+  .peek-hint { font-size: 13px; }
+
+  .nav {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 16px;
+    margin-top: 18px;
+  }
+  button {
+    font: inherit;
+    background: #fff;
+    color: #000;
+    border: 1px solid #000;
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 16px;
+    cursor: pointer;
+  }
+  button:active { background: #eee; }
+  .arrow { font-size: 28px; width: 72px; height: 56px; padding: 0; }
+  .speak { width: 56px; height: 56px; padding: 0; font-size: 22px; }
+
+  .controls {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 10px;
+    margin-top: 18px;
+  }
+  .controls button.on { background: #000; color: #fff; }
+
+  .jump {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 8px;
+    margin-top: 18px;
+    font-size: 15px;
+  }
+  .jump input {
+    font: inherit;
+    width: 90px;
+    padding: 8px;
+    border: 1px solid #000;
+    border-radius: 8px;
+    text-align: center;
+  }
+  .jump button { padding: 8px 12px; }
+
+  /* Màn hình bắt đầu (cần 1 lần bấm để trình duyệt cho phép phát âm thanh) */
+  #start {
+    position: fixed; inset: 0;
+    background: #fff;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: 16px; padding: 16px; text-align: center;
+  }
+  #start h1 { font-size: 26px; margin: 0; }
+  #start p { margin: 0; }
+  #start button { font-size: 20px; padding: 14px 28px; }
+
+  @media (max-width: 480px) {
+    .en { font-size: 36px; }
+    .vi { font-size: 22px; }
+    .card { min-height: 220px; }
+  }
+</style>
+</head>
+<body>
+
+<div id="start">
+  <h1>Flashcard 3000 từ tiếng Anh</h1>
+  <p id="startInfo"></p>
+  <button id="startBtn">Bắt đầu học</button>
+</div>
+
+<div class="wrap">
+  <div class="counter"><span id="counter"></span></div>
+
+  <div class="card" id="card">
+    <div class="en" id="en"></div>
+    <div class="pos" id="pos"></div>
+    <div class="vi" id="vi"></div>
+  </div>
+
+  <div class="nav">
+    <button class="arrow" id="prev" title="Từ trước (phím ←)">&larr;</button>
+    <button class="speak" id="speak" title="Đọc lại (phím Space)">🔊</button>
+    <button class="arrow" id="next" title="Từ tiếp theo (phím →)">&rarr;</button>
+  </div>
+
+  <div class="controls">
+    <button id="toggleVi"></button>
+    <button id="toggleEn"></button>
+    <button id="peekEn"></button>
+  </div>
+
+  <div class="jump">
+    <span>Đi tới từ số</span>
+    <input id="jumpInput" type="number" min="1">
+    <button id="jumpBtn">Đi</button>
+  </div>
+</div>
+
+<script src="words.js"></script>
+<script>
+(function () {
+  var TOTAL = WORDS.length;
+
+  // ---- Lưu trạng thái (vị trí + cài đặt) ----
+  function load(key, def) {
+    try { var v = localStorage.getItem(key); return v === null ? def : JSON.parse(v); }
+    catch (e) { return def; }
+  }
+  function save(key, val) {
+    try { localStorage.setItem(key, JSON.stringify(val)); } catch (e) {}
+  }
+
+  var index = load('fc_index', 0);
+  if (typeof index !== 'number' || index < 0 || index >= TOTAL) index = 0;
+  var showVi = load('fc_showVi', true);   // hiện / ẩn tiếng Việt
+  var showEn = load('fc_showEn', true);   // hiện / ẩn tiếng Anh (chế độ)
+  var peek = false;                       // xem tạm tiếng Anh cho riêng từ đang xem
+
+  var $ = function (id) { return document.getElementById(id); };
+  var enEl = $('en'), posEl = $('pos'), viEl = $('vi');
+
+  // ---- Đọc tiếng Anh giọng Mỹ ----
+  var voice = null;
+  function pickVoice() {
+    if (!('speechSynthesis' in window)) return;
+    var voices = speechSynthesis.getVoices();
+    var us = voices.filter(function (v) { return v.lang === 'en-US' || v.lang === 'en_US'; });
+    var preferred = ['Samantha', 'Google US English', 'Microsoft Aria', 'Microsoft Jenny', 'Alex'];
+    voice = null;
+    for (var i = 0; i < preferred.length && !voice; i++) {
+      voice = us.find(function (v) { return v.name.indexOf(preferred[i]) !== -1; }) || null;
+    }
+    if (!voice) voice = us[0] || null;
+  }
+  if ('speechSynthesis' in window) {
+    pickVoice();
+    speechSynthesis.onvoiceschanged = pickVoice;
+  }
+
+  function speak() {
+    if (!('speechSynthesis' in window)) return;
+    speechSynthesis.cancel();
+    var u = new SpeechSynthesisUtterance(WORDS[index][0]);
+    u.lang = 'en-US';
+    if (voice) u.voice = voice;
+    u.rate = 0.9;
+    speechSynthesis.speak(u);
+  }
+
+  // ---- Hiển thị ----
+  function enVisible() { return showEn || peek; }
+
+  function render() {
+    var w = WORDS[index];
+    $('counter').textContent = (index + 1) + ' / ' + TOTAL;
+
+    if (enVisible()) {
+      enEl.textContent = w[0];
+      enEl.className = 'en';
+    } else {
+      enEl.textContent = '• • •';
+      enEl.className = 'en hidden-text';
+    }
+    posEl.textContent = w[1];
+    viEl.textContent = w[2];
+    viEl.style.visibility = showVi ? 'visible' : 'hidden';
+
+    $('toggleVi').textContent = showVi ? 'Tắt tiếng Việt' : 'Bật tiếng Việt';
+    $('toggleVi').className = showVi ? '' : 'on';
+    $('toggleEn').textContent = showEn ? 'Tắt tiếng Anh' : 'Bật tiếng Anh';
+    $('toggleEn').className = showEn ? '' : 'on';
+
+    // Nút "Xem tiếng Anh từ này" chỉ có khi đang tắt tiếng Anh
+    var peekBtn = $('peekEn');
+    peekBtn.style.display = showEn ? 'none' : '';
+    peekBtn.textContent = peek ? 'Ẩn lại tiếng Anh' : 'Xem tiếng Anh từ này';
+
+    // Nút loa chỉ dùng được khi đang nhìn thấy chữ tiếng Anh
+    $('speak').disabled = !enVisible();
+    $('speak').style.opacity = enVisible() ? '1' : '0.3';
+  }
+
+  function go(newIndex) {
+    index = (newIndex + TOTAL) % TOTAL;
+    peek = false;               // sang từ mới: tiếng Anh vẫn giữ chế độ tắt
+    save('fc_index', index);
+    render();
+    if (showEn) speak();        // chỉ tự động đọc khi tiếng Anh đang bật
+    else if ('speechSynthesis' in window) speechSynthesis.cancel();
+  }
+
+  // ---- Sự kiện ----
+  $('prev').onclick = function () { go(index - 1); };
+  $('next').onclick = function () { go(index + 1); };
+  $('speak').onclick = function () { if (enVisible()) speak(); };
+
+  $('toggleVi').onclick = function () {
+    showVi = !showVi; save('fc_showVi', showVi); render();
+  };
+  $('toggleEn').onclick = function () {
+    showEn = !showEn; peek = false; save('fc_showEn', showEn); render();
+    if (!showEn && 'speechSynthesis' in window) speechSynthesis.cancel();
+  };
+  $('peekEn').onclick = function () {
+    peek = !peek; render();
+    if (peek) speak();
+  };
+
+  function jump() {
+    var n = parseInt($('jumpInput').value, 10);
+    if (n >= 1 && n <= TOTAL) { go(n - 1); $('jumpInput').value = ''; $('jumpInput').blur(); }
+  }
+  $('jumpBtn').onclick = jump;
+  $('jumpInput').max = TOTAL;
+  $('jumpInput').addEventListener('keydown', function (e) { if (e.key === 'Enter') jump(); });
+
+  document.addEventListener('keydown', function (e) {
+    if (document.getElementById('start').style.display !== 'none') return;
+    if (e.target.tagName === 'INPUT') return;
+    if (e.key === 'ArrowLeft') { go(index - 1); }
+    else if (e.key === 'ArrowRight') { go(index + 1); }
+    else if (e.key === ' ') { e.preventDefault(); if (enVisible()) speak(); }
+  });
+
+  // Vuốt trái / phải trên điện thoại
+  var touchX = null;
+  $('card').addEventListener('touchstart', function (e) { touchX = e.touches[0].clientX; }, { passive: true });
+  $('card').addEventListener('touchend', function (e) {
+    if (touchX === null) return;
+    var dx = e.changedTouches[0].clientX - touchX;
+    touchX = null;
+    if (dx > 50) go(index - 1);
+    else if (dx < -50) go(index + 1);
+  });
+
+  // ---- Màn hình bắt đầu ----
+  $('startInfo').textContent = index > 0
+    ? 'Tiếp tục từ từ số ' + (index + 1) + ' / ' + TOTAL
+    : 'Gồm ' + TOTAL + ' từ thông dụng nhất (Oxford 3000)';
+  $('startBtn').onclick = function () {
+    $('start').style.display = 'none';
+    go(index);
+  };
+
+  render();
+})();
+</script>
+</body>
+</html>
